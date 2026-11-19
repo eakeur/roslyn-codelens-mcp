@@ -32,7 +32,10 @@ public class LegacySolutionHandlingTests
         var loaded = manager.GetLoadedSolution();
         Assert.NotEmpty(loaded.SkippedProjects);
         Assert.Contains(loaded.SkippedProjects, p => string.Equals(p.Kind, "Legacy", StringComparison.Ordinal));
-        Assert.Contains(loaded.SkippedProjects, p => p.Reason.Contains("non-SDK", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(loaded.SkippedProjects, p =>
+            p.Reason.Contains("Visual Studio", StringComparison.OrdinalIgnoreCase)
+            || p.Reason.Contains("Build Tools", StringComparison.OrdinalIgnoreCase)
+            || p.Reason.Contains("Windows", StringComparison.OrdinalIgnoreCase));
 
         manager.Dispose();
     }

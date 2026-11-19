@@ -160,6 +160,7 @@ Location-returning results include an `Origin` field (`source` or `metadata`) an
 ## Runtime configuration
 
 - `ROSLYN_CODELENS_OPEN_PROJECT_TIMEOUT_SECONDS` — per-project MSBuild load timeout (default `300`). When a project exceeds this duration during workspace open, it's recorded as a `SkippedProjects` entry with `kind: "Timeout"` and the rest of the solution still loads. Useful when a legacy or malformed project wedges the `BuildHost-net472` subprocess.
+- `ROSLYN_CODELENS_FRAMEWORK_MSBUILD_AVAILABLE` — override the Visual Studio / Build Tools MSBuild probe (`1`/`true` force available, `0`/`false` force unavailable). Intended for tests and diagnostics; leave unset in normal use.
 
 ## Security: Trust Model
 
@@ -350,19 +351,16 @@ Location-returning tools include an `IsGenerated` flag to distinguish source-gen
 
 ## Project compatibility
 
-The server analyses every project that MSBuildWorkspace can load under the .NET SDK runtime.
+**Supported everywhere the .NET SDK works:** SDK-style projects (`<Project Sdk="...">`), any target framework — `net48`, `net6.0`, `net8.0`, `net10.0`, etc. SDK-style .NET Framework targets (for example `<TargetFramework>net48</TargetFramework>`) load normally.
 
-**Supported:** SDK-style projects (`<Project Sdk="...">`), any target framework — `net48`, `net6.0`, `net8.0`, `net10.0`, etc. .NET Framework targets work fine *as long as the csproj uses the SDK-style format*.
+**Classic (non-SDK) .NET Framework projects** (`<Project ToolsVersion="..." xmlns="http://schemas.microsoft.com/developer/msbuild/2003">`):
 
-**Skipped (with a warning, not a crash):** legacy non-SDK-style projects (`<Project ToolsVersion="..." xmlns="http://schemas.microsoft.com/developer/msbuild/2003">`, typically `.NET Framework` projects authored in older versions of Visual Studio). These rely on `Microsoft.Common.props` imports from the .NET Framework MSBuild that ships with Visual Studio, which is not available in the .NET SDK MSBuild runtime.
+- **Windows with Visual Studio or Build Tools** (MSBuild with Framework targets installed): the server probes for MSBuild via `vswhere` and well-known install paths, then loads classic projects through Roslyn's out-of-process `BuildHost-net472`. SDK-style projects in the same solution still load via `BuildHost-netcore`. The MCP process itself keeps using the .NET SDK MSBuild (`MSBuildLocator.RegisterDefaults`); it does not register VS MSBuild in-process. A Visual Studio Developer Command Prompt is optional convenience, not the mechanism.
+- **Linux, Docker, or Windows without VS/Build Tools:** classic projects are skipped (not crashed) and recorded in `LoadedSolution.SkippedProjects` with `Kind: "Legacy"`. SDK-style projects in the same solution still load and remain fully queryable.
 
-When a solution contains legacy projects, the server:
+When classic projects fail to evaluate even with Framework MSBuild present, they appear in `SkippedProjects` with `Kind: "Failed"` or `"Timeout"`. Use `list_solutions` / the `load_solution` summary for per-project reasons.
 
-1. Loads every SDK-style project normally — all tools work for those.
-2. Skips each legacy project and records it in `LoadedSolution.SkippedProjects`.
-3. Surfaces the skipped list via `list_solutions` (the `SkippedProjects` array on each `SolutionInfo`) and in the return message of `load_solution`. Each entry includes the project name, kind (`Legacy`), and reason.
-
-**To analyse a legacy project,** convert it to SDK-style format (see [Microsoft's migration guide](https://learn.microsoft.com/en-us/dotnet/core/porting/project-structure)) or open the solution from a Visual Studio Developer Command Prompt so the full Visual Studio MSBuild is on `PATH`.
+**To analyse a classic project without VS/Build Tools,** convert it to SDK-style format (see [Microsoft's migration guide](https://learn.microsoft.com/en-us/dotnet/core/porting/project-structure)).
 
 ## Development
 

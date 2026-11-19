@@ -112,19 +112,28 @@ public class SolutionLoader
             return await OpenFilteredAsync(solutionPath, classified, filter, analyzerLoader, ct).ConfigureAwait(false);
         }
 
-        var legacyOrMissing = classified
-            .Where(p => p.Kind is ProjectClassifier.ProjectKind.Legacy
-                     or ProjectClassifier.ProjectKind.Missing
-                     or ProjectClassifier.ProjectKind.Unknown)
-            .ToList();
+        var legacyCount = classified.Count(p => p.Kind == ProjectClassifier.ProjectKind.Legacy);
+        var frameworkMsBuild = FrameworkMsBuildCapability.Get();
 
-        var preFilter = legacyOrMissing.Any(p => p.Kind == ProjectClassifier.ProjectKind.Legacy);
-        if (preFilter)
+        // Without VS/Build Tools Framework MSBuild, classic projects cannot be
+        // evaluated — skip them via the per-project path. When the capability is
+        // available, fall through to OpenSolutionAsync so Roslyn can spawn
+        // BuildHost-net472 alongside BuildHost-netcore for mixed solutions.
+        if (legacyCount > 0 && !frameworkMsBuild.IsAvailable)
         {
             await Console.Error.WriteLineAsync(
-                $"[roslyn-codelens] Detected {legacyOrMissing.Count(p => p.Kind == ProjectClassifier.ProjectKind.Legacy)} legacy non-SDK project(s) in {Path.GetFileName(solutionPath)}; loading SDK-style projects only.")
+                $"[roslyn-codelens] Detected {legacyCount} legacy non-SDK project(s) in {Path.GetFileName(solutionPath)}; " +
+                $"Framework MSBuild unavailable ({frameworkMsBuild.UnavailableReason}); loading SDK-style projects only.")
                 .ConfigureAwait(false);
             return await OpenPerProjectAsync(solutionPath, classified, analyzerLoader, ct).ConfigureAwait(false);
+        }
+
+        if (legacyCount > 0)
+        {
+            await Console.Error.WriteLineAsync(
+                $"[roslyn-codelens] Detected {legacyCount} legacy non-SDK project(s) in {Path.GetFileName(solutionPath)}; " +
+                "attempting classic load via BuildHost-net472.")
+                .ConfigureAwait(false);
         }
 
         await Console.Error.WriteLineAsync($"[roslyn-codelens] Loading solution: {Path.GetFileName(solutionPath)}").ConfigureAwait(false);
@@ -282,24 +291,28 @@ public class SolutionLoader
         CancellationToken ct)
     {
         var skipped = new List<SkippedProject>();
+        var frameworkMsBuild = FrameworkMsBuildCapability.Get();
 
-        // Non-SDK entries (legacy/missing/unknown) are never opened; report them
-        // up front, exactly as the old sequential loader did.
+        // SDK-style projects always load. Classic (Legacy) projects load only when
+        // Framework MSBuild is available (Windows + VS/Build Tools); otherwise they
+        // are reported up front. Missing/Unknown are never opened.
         var targets = new List<ProjectClassifier.ClassifiedProject>(classified.Count);
         foreach (var entry in classified)
         {
-            if (entry.Kind == ProjectClassifier.ProjectKind.SdkStyle)
+            if (entry.Kind == ProjectClassifier.ProjectKind.SdkStyle
+                || (entry.Kind == ProjectClassifier.ProjectKind.Legacy && frameworkMsBuild.IsAvailable))
             {
                 targets.Add(entry);
+                continue;
             }
-            else
-            {
-                var kind = entry.Kind.ToString();
-                var reason = entry.Reason ?? "Unsupported project format.";
-                await Console.Error.WriteLineAsync(
-                    $"[roslyn-codelens] Skipping {kind} project {entry.Name}: {reason}").ConfigureAwait(false);
-                skipped.Add(new SkippedProject(entry.Path, entry.Name, kind, reason));
-            }
+
+            var kind = entry.Kind.ToString();
+            var reason = entry.Kind == ProjectClassifier.ProjectKind.Legacy
+                ? FrameworkMsBuildCapability.UnavailableReason
+                : entry.Reason ?? "Unsupported project format.";
+            await Console.Error.WriteLineAsync(
+                $"[roslyn-codelens] Skipping {kind} project {entry.Name}: {reason}").ConfigureAwait(false);
+            skipped.Add(new SkippedProject(entry.Path, entry.Name, kind, reason));
         }
 
         if (targets.Count == 0)
@@ -566,10 +579,15 @@ public class SolutionLoader
         foreach (var entry in classified)
             nameByPath[entry.Path] = entry.Name;
 
+        var frameworkMsBuild = FrameworkMsBuildCapability.Get();
         var graph = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         foreach (var entry in classified)
         {
-            if (entry.Kind != ProjectClassifier.ProjectKind.SdkStyle)
+            // Include Legacy edges when Framework MSBuild is available so filter
+            // closures can reach classic projects. Otherwise treat them as leaves.
+            var includeInGraph = entry.Kind == ProjectClassifier.ProjectKind.SdkStyle
+                || (entry.Kind == ProjectClassifier.ProjectKind.Legacy && frameworkMsBuild.IsAvailable);
+            if (!includeInGraph)
             {
                 graph[entry.Name] = Array.Empty<string>();
                 continue;

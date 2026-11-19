@@ -99,7 +99,7 @@ internal static class ProjectClassifier
             var ns = root.Name.NamespaceName;
             if (string.Equals(ns, "http://schemas.microsoft.com/developer/msbuild/2003", StringComparison.OrdinalIgnoreCase))
                 return new ClassifiedProject(absolutePath, name, ProjectKind.Legacy,
-                    "Legacy (non-SDK-style) project; .NET Framework MSBuild format is not supported under the .NET SDK runtime.");
+                    "Legacy (non-SDK-style) .NET Framework project; loads via BuildHost-net472 when Visual Studio or Build Tools MSBuild is available.");
 
             return new ClassifiedProject(absolutePath, name, ProjectKind.Unknown,
                 "Unrecognised project format (no Sdk attribute and no legacy MSBuild namespace).");

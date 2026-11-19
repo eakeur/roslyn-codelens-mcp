@@ -312,7 +312,7 @@ Limitations: abstract methods, interface instance members, and properties-as-who
 - `unload_solution` — free memory.
 - `rebuild_solution` — full reload (after `Directory.Build.props` changes, new analyzers/packages, or stale diagnostics).
 
-**Legacy project handling:** when a solution contains non-SDK-style projects (`<Project ToolsVersion="..." xmlns=".../msbuild/2003">`, typically older .NET Framework projects), the server pre-filters them out before MSBuild sees them. Those projects appear in `SkippedProjects` with `Kind: "Legacy"`. The SDK-style projects in the same solution load normally and remain fully queryable — partial load, not all-or-nothing. If a tool returns "no results" for what should be a legacy project, check `list_solutions` first.
+**Legacy / classic Framework project handling:** non-SDK-style projects (`<Project ToolsVersion="..." xmlns=".../msbuild/2003">`) load on **Windows with Visual Studio or Build Tools** via Roslyn's `BuildHost-net472` after a VS/Build Tools MSBuild probe. On Linux/Docker or Windows without that MSBuild, they are skipped into `SkippedProjects` with `Kind: "Legacy"`; SDK-style projects in the same solution still load. SDK-style `net48` is supported everywhere the .NET SDK works. If a tool returns "no results" for what should be a classic project, check `list_solutions` first (`Legacy` / `Failed` / `Timeout`).
 
 ### Planning a Change — standard order
 1. `get_type_overview` — context + hierarchy + diagnostics.
