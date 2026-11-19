@@ -9,9 +9,9 @@ internal static class SolutionLoadFailure
         if (LooksLikeLegacyMsBuildFailure(ex))
         {
             return $"Failed to load solution '{fileName}': it appears to contain non-SDK-style " +
-                   "(legacy .NET Framework) projects, which MSBuildWorkspace cannot load when " +
-                   "running under the .NET SDK. Convert affected projects to SDK-style csproj, " +
-                   "or run the server from a Visual Studio Developer environment. " +
+                   "(legacy .NET Framework) projects that could not be evaluated. On Windows, " +
+                   "install Visual Studio or Build Tools (with MSBuild) so Roslyn's BuildHost-net472 " +
+                   "can load them; otherwise convert affected projects to SDK-style csproj. " +
                    $"Underlying error: {ex.GetType().Name}: {ex.Message}";
         }
 
